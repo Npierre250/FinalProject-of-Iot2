@@ -1,0 +1,65 @@
+# Dockerfile.hadoop
+# Base image used by NameNode, DataNodes, ResourceManager, NodeManagers.
+# Installs Hadoop 3.3.6, SSH (required by Hadoop daemons), and Java 11.
+FROM ubuntu:22.04
+
+ARG HADOOP_VERSION=3.3.6
+ARG FLINK_VERSION=1.18.1
+ARG SCALA_VERSION=2.12
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 \
+    HADOOP_HOME=/opt/hadoop \
+    HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop \
+    FLINK_HOME=/opt/flink \
+    PATH="$PATH:/opt/hadoop/bin:/opt/hadoop/sbin:/opt/flink/bin"
+
+# ── System packages ───────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-11-jdk \
+        ssh \
+        rsync \
+        curl \
+        wget \
+        netcat \
+        python3 \
+        python3-pip \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Hadoop ────────────────────────────────────────────────────────────────────
+RUN wget -q "https://downloads.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz" \
+        -O /tmp/hadoop.tar.gz \
+    && tar -xzf /tmp/hadoop.tar.gz -C /opt \
+    && mv /opt/hadoop-${HADOOP_VERSION} /opt/hadoop \
+    && rm /tmp/hadoop.tar.gz
+
+# ── Flink (for YARN client + job submission) ──────────────────────────────────
+RUN wget -q "https://downloads.apache.org/flink/flink-${FLINK_VERSION}/flink-${FLINK_VERSION}-bin-scala_${SCALA_VERSION}.tgz" \
+        -O /tmp/flink.tar.gz \
+    && tar -xzf /tmp/flink.tar.gz -C /opt \
+    && mv /opt/flink-${FLINK_VERSION} /opt/flink \
+    && rm /tmp/flink.tar.gz
+
+# Set JAVA_HOME for Hadoop
+RUN echo "export JAVA_HOME=${JAVA_HOME}" >> /opt/hadoop/etc/hadoop/hadoop-env.sh
+
+# ── SSH (passwordless, for Hadoop daemons) ────────────────────────────────────
+RUN ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa \
+    && cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys \
+    && chmod 0600 ~/.ssh/authorized_keys
+COPY hadoop-config/ssh_config /root/.ssh/config
+
+# ── Hadoop config ─────────────────────────────────────────────────────────────
+COPY hadoop-config/core-site.xml    /opt/hadoop/etc/hadoop/core-site.xml
+COPY hadoop-config/hdfs-site.xml    /opt/hadoop/etc/hadoop/hdfs-site.xml
+COPY hadoop-config/yarn-site.xml    /opt/hadoop/etc/hadoop/yarn-site.xml
+COPY hadoop-config/mapred-site.xml  /opt/hadoop/etc/hadoop/mapred-site.xml
+COPY hadoop-config/workers          /opt/hadoop/etc/hadoop/workers
+
+# ── Flink config ──────────────────────────────────────────────────────────────
+COPY flink-config/flink-conf.yaml   /opt/flink/conf/flink-conf.yaml
+
+EXPOSE 9870 9000 8088 8042 8081
+
+WORKDIR /opt/hadoop

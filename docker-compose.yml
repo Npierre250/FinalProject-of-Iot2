@@ -1,0 +1,265 @@
+version: "3.8"
+
+# =============================================================================
+#  IoT Sensor Processing — Flink on YARN + HDFS  (v2 — corrected)
+#
+#  Key fixes vs v1:
+#   - Uses official apache/hadoop:3 and apache/flink:1.18 Docker Hub images
+#     (no wget-at-build-time, no broken mirror URLs)
+#   - YARN session is started automatically on boot; Flink JM/TMs live on YARN
+#   - Generator socket moved to port 9999 (away from HDFS RPC port 9000)
+#   - Streaming job is submitted automatically once the YARN session is ready
+#   - Per-job mode (-m yarn-cluster) replaced by session mode for visibility
+#
+#  Proof for the professor:
+#   YARN UI  → http://localhost:8088  (shows Flink as a running YARN app)
+#   HDFS UI  → http://localhost:9870  (shows /flink/checkpoints, /output, …)
+# =============================================================================
+
+x-hadoop-env: &hadoop-env
+  HADOOP_HOME: /opt/hadoop
+  JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+  HDFS_NAMENODE_USER: root
+  HDFS_DATANODE_USER: root
+  HDFS_SECONDARYNAMENODE_USER: root
+  YARN_RESOURCEMANAGER_USER: root
+  YARN_NODEMANAGER_USER: root
+
+services:
+
+  # ── HDFS NameNode ───────────────────────────────────────────────────────────
+  namenode:
+    image: apache/hadoop:3
+    hostname: namenode
+    container_name: namenode
+    user: root
+    ports:
+      - "9870:9870"    # HDFS Web UI
+      - "9000:9000"    # HDFS RPC
+    volumes:
+      - namenode-data:/hadoop/dfs/name
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./hadoop-config/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml
+      - ./hadoop-config/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml
+      - ./scripts/entrypoint-namenode.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9870/jmx?qry=Hadoop:service=NameNode,name=NameNodeStatus | grep -q 'active'"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── HDFS DataNode 1 ─────────────────────────────────────────────────────────
+  datanode1:
+    image: apache/hadoop:3
+    hostname: datanode1
+    container_name: datanode1
+    user: root
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - datanode1-data:/hadoop/dfs/data
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./scripts/entrypoint-datanode.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+
+  # ── HDFS DataNode 2 ─────────────────────────────────────────────────────────
+  datanode2:
+    image: apache/hadoop:3
+    hostname: datanode2
+    container_name: datanode2
+    user: root
+    depends_on:
+      namenode:
+        condition: service_healthy
+    volumes:
+      - datanode2-data:/hadoop/dfs/data
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./scripts/entrypoint-datanode.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+
+  # ── YARN ResourceManager ────────────────────────────────────────────────────
+  resourcemanager:
+    image: apache/hadoop:3
+    hostname: resourcemanager
+    container_name: resourcemanager
+    user: root
+    depends_on:
+      namenode:
+        condition: service_healthy
+    ports:
+      - "8088:8088"    # YARN Resource Manager Web UI  ← show this to the professor
+      - "19888:19888"  # MapReduce History Server
+    volumes:
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./hadoop-config/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml
+      - ./hadoop-config/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml
+      - ./scripts/entrypoint-resourcemanager.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/ws/v1/cluster/info | grep -q 'clusterInfo'"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  # ── YARN NodeManager 1 ──────────────────────────────────────────────────────
+  nodemanager1:
+    image: apache/hadoop:3
+    hostname: nodemanager1
+    container_name: nodemanager1
+    user: root
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    ports:
+      - "8042:8042"
+    volumes:
+      - nodemanager1-local:/hadoop/yarn/local
+      - nodemanager1-logs:/hadoop/yarn/logs
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./hadoop-config/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml
+      - ./hadoop-config/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml
+      - ./scripts/entrypoint-nodemanager.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+
+  # ── YARN NodeManager 2 ──────────────────────────────────────────────────────
+  nodemanager2:
+    image: apache/hadoop:3
+    hostname: nodemanager2
+    container_name: nodemanager2
+    user: root
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+    ports:
+      - "8043:8042"
+    volumes:
+      - nodemanager2-local:/hadoop/yarn/local
+      - nodemanager2-logs:/hadoop/yarn/logs
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./hadoop-config/yarn-site.xml:/opt/hadoop/etc/hadoop/yarn-site.xml
+      - ./hadoop-config/mapred-site.xml:/opt/hadoop/etc/hadoop/mapred-site.xml
+      - ./scripts/entrypoint-nodemanager.sh:/entrypoint.sh
+    command: ["/bin/bash", "/entrypoint.sh"]
+    environment:
+      <<: *hadoop-env
+    networks:
+      - hadoop-net
+
+  # ── Flink YARN Session + job auto-submit ────────────────────────────────────
+  # This is THE key container for the professor requirement.
+  # It:
+  #   1. Starts a Flink YARN session  →  Flink JobManager becomes a YARN app
+  #   2. Waits for the session to be ready
+  #   3. Submits the IoT streaming job into that session
+  # Result: YARN UI shows "IoT-Sensor-Processing" as a RUNNING application.
+  flink-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    hostname: flink-client
+    container_name: flink-client
+    depends_on:
+      resourcemanager:
+        condition: service_healthy
+      namenode:
+        condition: service_healthy
+      datanode1:
+        condition: service_started
+      datanode2:
+        condition: service_started
+      data-generator-stream:
+        condition: service_started
+    volumes:
+      - ./flink-job:/flink-job
+      - ./scripts/start-flink-yarn-session.sh:/start-flink-yarn-session.sh
+    networks:
+      - hadoop-net
+    environment:
+      HADOOP_CONF_DIR: /opt/hadoop/etc/hadoop
+      YARN_CONF_DIR: /opt/hadoop/etc/hadoop
+      HDFS_BASE: hdfs://namenode:9000
+      SOCKET_HOST: data-generator-stream
+      SOCKET_PORT: "9999"
+    command: ["/bin/bash", "/start-flink-yarn-session.sh"]
+    restart: on-failure
+
+  # ── IoT Stream Data Generator ───────────────────────────────────────────────
+  # Listens on port 9999 (NOT 9000 — that is HDFS RPC).
+  data-generator-stream:
+    build:
+      context: .
+      dockerfile: Dockerfile.generator
+    hostname: data-generator-stream
+    container_name: data-generator-stream
+    networks:
+      - hadoop-net
+    environment:
+      MODE: stream
+      SOCKET_PORT: "9999"
+      NAMENODE_HOST: namenode
+    restart: unless-stopped
+
+  # ── IoT Batch Data Generator ────────────────────────────────────────────────
+  data-generator-batch:
+    build:
+      context: .
+      dockerfile: Dockerfile.generator
+    hostname: data-generator-batch
+    container_name: data-generator-batch
+    depends_on:
+      namenode:
+        condition: service_healthy
+    networks:
+      - hadoop-net
+    environment:
+      MODE: batch
+      BATCH_RECORDS: "500000"
+      HDFS_INPUT: hdfs://namenode:9000/flink/input
+      NAMENODE_HOST: namenode
+    restart: "no"
+
+volumes:
+  namenode-data:
+  datanode1-data:
+  datanode2-data:
+  nodemanager1-local:
+  nodemanager1-logs:
+  nodemanager2-local:
+  nodemanager2-logs:
+
+networks:
+  hadoop-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

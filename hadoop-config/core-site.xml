@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+  <!-- HDFS NameNode URI - all services reference this -->
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+  </property>
+
+  <!-- Enable trash for safety -->
+  <property>
+    <name>fs.trash.interval</name>
+    <value>1440</value>
+  </property>
+
+  <!-- Hadoop tmp dir (inside container) -->
+  <property>
+    <name>hadoop.tmp.dir</name>
+    <value>/hadoop/tmp</value>
+  </property>
+
+  <!-- Allow the flink user to proxy others (needed for YARN) -->
+  <property>
+    <name>hadoop.proxyuser.flink.hosts</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.proxyuser.flink.groups</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.proxyuser.root.hosts</name>
+    <value>*</value>
+  </property>
+  <property>
+    <name>hadoop.proxyuser.root.groups</name>
+    <value>*</value>
+  </property>
+</configuration>

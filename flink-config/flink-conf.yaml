@@ -1,0 +1,66 @@
+# =============================================================
+# Apache Flink Configuration — YARN + HDFS mode
+# =============================================================
+
+# --- JobManager ---
+jobmanager.rpc.address: localhost          # overridden by YARN at runtime
+jobmanager.rpc.port: 6123
+jobmanager.memory.process.size: 1600m
+
+# --- TaskManager ---
+taskmanager.memory.process.size: 1728m
+taskmanager.numberOfTaskSlots: 2
+
+# --- Parallelism ---
+parallelism.default: 2
+
+# --- High Availability (standalone in dev; swap to ZooKeeper for prod) ---
+high-availability: NONE
+
+# --- Checkpointing on HDFS ---
+state.backend: filesystem
+state.checkpoints.dir: hdfs://namenode:9000/flink/checkpoints
+state.savepoints.dir: hdfs://namenode:9000/flink/savepoints
+
+# Enable incremental checkpoints (RocksDB only; filesystem uses full)
+state.backend.incremental: false
+
+# Checkpoint interval (ms)
+execution.checkpointing.interval: 30000
+execution.checkpointing.mode: EXACTLY_ONCE
+execution.checkpointing.timeout: 60000
+execution.checkpointing.min-pause: 5000
+
+# --- YARN integration ---
+yarn.application.name: IoT-Sensor-Processing
+yarn.application-master.port: 8081
+
+# Container memory overhead
+yarn.per-job-cluster.include-user-jar: LAST
+
+# --- HDFS / Hadoop ---
+fs.hdfs.hadoopconf: /etc/hadoop/conf
+
+# --- REST / Web UI ---
+rest.port: 8081
+rest.address: 0.0.0.0
+web.submit.enable: true
+
+# --- Classloading ---
+classloader.resolve-order: parent-first
+
+# --- Akka / RPC timeouts ---
+akka.ask.timeout: 100s
+akka.framesize: 104857600b
+
+# --- Heartbeat ---
+heartbeat.interval: 10000
+heartbeat.timeout: 60000
+
+# --- Metrics ---
+metrics.reporter.promgateway.class: org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporter
+metrics.reporter.promgateway.host: localhost
+metrics.reporter.promgateway.port: 9091
+metrics.reporter.promgateway.jobName: flink-iot
+metrics.reporter.promgateway.randomJobNameSuffix: true
+metrics.reporter.promgateway.deleteOnShutdown: true
