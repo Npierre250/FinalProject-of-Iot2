@@ -2,7 +2,7 @@
 # Minimal Python + Hadoop client image for the IoT data generator.
 # Stream mode: opens TCP socket on port 9999 (NOT 9000 — that's HDFS RPC).
 # Batch mode:  generates CSV and uploads to HDFS.
-FROM python:3.9-slim
+FROM python:3.9-slim-bullseye
 
 ARG HADOOP_VERSION=3.3.6
 

@@ -18,7 +18,7 @@ version: "3.8"
 
 x-hadoop-env: &hadoop-env
   HADOOP_HOME: /opt/hadoop
-  JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
+  JAVA_HOME: /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.212.b04-0.el7_6.x86_64/jre
   HDFS_NAMENODE_USER: root
   HDFS_DATANODE_USER: root
   HDFS_SECONDARYNAMENODE_USER: root
@@ -49,11 +49,11 @@ services:
     networks:
       - hadoop-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9870/jmx?qry=Hadoop:service=NameNode,name=NameNodeStatus | grep -q 'active'"]
+      test: ["CMD-SHELL", "hdfs dfsadmin -safemode get 2>/dev/null | grep -q 'Safe mode is OFF'"]
       interval: 20s
       timeout: 10s
       retries: 15
-      start_period: 60s
+      start_period: 90s
 
   # ── HDFS DataNode 1 ─────────────────────────────────────────────────────────
   datanode1:
@@ -119,11 +119,11 @@ services:
     networks:
       - hadoop-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8088/ws/v1/cluster/info | grep -q 'clusterInfo'"]
+      test: ["CMD-SHELL", "yarn node -list 2>/dev/null | grep -q 'Total Nodes' || yarn rmadmin -getServiceState rm 2>/dev/null | grep -q 'active' || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 15
-      start_period: 60s
+      start_period: 120s
 
   # ── YARN NodeManager 1 ──────────────────────────────────────────────────────
   nodemanager1:
