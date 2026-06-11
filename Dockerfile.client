@@ -1,41 +1,62 @@
-# Dockerfile.client  (v2)
-# Uses official flink:1.18.1 image (includes Java + Flink pre-installed).
-# Adds Hadoop config + PyFlink so it can submit Python jobs to YARN.
+# ============================================================
+# Flink + Hadoop YARN Client (Fixed Version)
+# Compatible with Flink 1.18 + Hadoop 3.3.6 cluster
+# ============================================================
+
 FROM flink:1.18.1-scala_2.12-java11
 
 ARG HADOOP_VERSION=3.3.6
 
-ENV HADOOP_HOME=/opt/hadoop \
+# ------------------------------------------------------------
+# Environment (IMPORTANT: consistent Java + Hadoop config)
+# ------------------------------------------------------------
+ENV FLINK_HOME=/opt/flink \
+    HADOOP_HOME=/opt/hadoop \
     HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop \
-    PATH="$PATH:/opt/hadoop/bin"
+    YARN_CONF_DIR=/opt/hadoop/etc/hadoop \
+    PATH="$PATH:/opt/flink/bin:/opt/hadoop/bin"
 
-# Install Python + wget
+# ------------------------------------------------------------
+# Install system dependencies
+# ------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip wget curl \
+    python3 python3-pip wget curl net-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Hadoop client (for hdfs dfs commands and YARN client libraries)
+# ------------------------------------------------------------
+# Install Hadoop client (for YARN + HDFS commands)
+# ------------------------------------------------------------
 RUN wget -q "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz" \
-        -O /tmp/hadoop.tar.gz \
+    -O /tmp/hadoop.tar.gz \
     && tar -xzf /tmp/hadoop.tar.gz -C /opt \
     && mv /opt/hadoop-${HADOOP_VERSION} /opt/hadoop \
-    && rm /tmp/hadoop.tar.gz \
-    && echo "export JAVA_HOME=/usr/local/openjdk-11" >> /opt/hadoop/etc/hadoop/hadoop-env.sh
+    && rm /tmp/hadoop.tar.gz
 
-# PyFlink (matches the Flink version in the base image)
+# IMPORTANT: do NOT override JAVA_HOME manually
+# Flink base image already manages correct Java path
+
+# ------------------------------------------------------------
+# Python dependencies (PyFlink)
+# ------------------------------------------------------------
 COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Hadoop config (points to the cluster)
+# ------------------------------------------------------------
+# Hadoop configuration (cluster connection)
+# ------------------------------------------------------------
 COPY hadoop-config/core-site.xml   /opt/hadoop/etc/hadoop/core-site.xml
 COPY hadoop-config/hdfs-site.xml   /opt/hadoop/etc/hadoop/hdfs-site.xml
 COPY hadoop-config/yarn-site.xml   /opt/hadoop/etc/hadoop/yarn-site.xml
 COPY hadoop-config/mapred-site.xml /opt/hadoop/etc/hadoop/mapred-site.xml
 
-# Flink config (HDFS checkpoints, etc.)
-COPY flink-config/flink-conf.yaml  /opt/flink/conf/flink-conf.yaml
+# ------------------------------------------------------------
+# Flink configuration
+# ------------------------------------------------------------
+COPY flink-config/flink-conf.yaml /opt/flink/conf/flink-conf.yaml
 
+# ------------------------------------------------------------
 # Application code
+# ------------------------------------------------------------
 COPY flink-job/ /flink-job/
 
 WORKDIR /flink-job
