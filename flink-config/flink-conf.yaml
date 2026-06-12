@@ -33,7 +33,7 @@ execution.checkpointing.min-pause: 5000
 
 # --- YARN integration ---
 yarn.application.name: IoT-Sensor-Processing
-yarn.application-master.port: 8081
+yarn.application-master.port: 8082
 
 # Container memory overhead
 yarn.per-job-cluster.include-user-jar: LAST
@@ -42,7 +42,7 @@ yarn.per-job-cluster.include-user-jar: LAST
 fs.hdfs.hadoopconf: /etc/hadoop/conf
 
 # --- REST / Web UI ---
-rest.port: 8081
+rest.port: 8082
 rest.address: 0.0.0.0
 web.submit.enable: true
 
@@ -64,3 +64,9 @@ metrics.reporter.promgateway.port: 9091
 metrics.reporter.promgateway.jobName: flink-iot
 metrics.reporter.promgateway.randomJobNameSuffix: true
 metrics.reporter.promgateway.deleteOnShutdown: true
+
+# --- Container Java ---
+containerized.master.env.JAVA_HOME: /opt/java/openjdk
+containerized.taskmanager.env.JAVA_HOME: /opt/java/openjdk
+blob.server.port: 6124
+query.server.port: 6125
