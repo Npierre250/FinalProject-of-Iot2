@@ -1,5 +1,5 @@
 # ============================================================
-# Flink + Hadoop YARN Client (Fixed Version)
+# Flink + Hadoop YARN Client
 # Compatible with Flink 1.18 + Hadoop 3.3.6 cluster
 # ============================================================
 
@@ -8,7 +8,7 @@ FROM flink:1.18.1-scala_2.12-java11
 ARG HADOOP_VERSION=3.3.6
 
 # ------------------------------------------------------------
-# Environment (IMPORTANT: consistent Java + Hadoop config)
+# Environment
 # ------------------------------------------------------------
 ENV FLINK_HOME=/opt/flink \
     HADOOP_HOME=/opt/hadoop \
@@ -32,8 +32,23 @@ RUN wget -q "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSI
     && mv /opt/hadoop-${HADOOP_VERSION} /opt/hadoop \
     && rm /tmp/hadoop.tar.gz
 
-# IMPORTANT: do NOT override JAVA_HOME manually
-# Flink base image already manages correct Java path
+# ------------------------------------------------------------
+# THE FIX: copy Hadoop JARs into Flink lib/ but EXCLUDE JARs
+# that conflict with Flink's own versions (commons-cli, slf4j,
+# log4j, guava, jackson, protobuf, jetty, netty, zookeeper)
+# ------------------------------------------------------------
+RUN EXCLUDE="commons-cli|slf4j|log4j|guava|jackson|protobuf|jetty|netty|zookeeper|jsr305|checker|listenablefuture|j2objc|animal-sniffer|error_prone|failureaccess" && \
+    for dir in \
+        /opt/hadoop/share/hadoop/common \
+        /opt/hadoop/share/hadoop/common/lib \
+        /opt/hadoop/share/hadoop/yarn \
+        /opt/hadoop/share/hadoop/yarn/lib \
+        /opt/hadoop/share/hadoop/hdfs \
+        /opt/hadoop/share/hadoop/hdfs/lib \
+        /opt/hadoop/share/hadoop/mapreduce; \
+    do \
+        find "$dir" -maxdepth 1 -name "*.jar" | grep -Ev "$EXCLUDE" | xargs -I{} cp {} /opt/flink/lib/ 2>/dev/null || true; \
+    done
 
 # ------------------------------------------------------------
 # Python dependencies (PyFlink)
